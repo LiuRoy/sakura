@@ -36,7 +36,7 @@ headers = {
 topic_list = ('https://www.zhihu.com/topic/19564408/top-answers',     # 爱情
               'https://www.zhihu.com/topic/19553155/top-answers',)    # 婚姻
 
-# 回答结构体 字段含义: 问题内容 问题标签 回复内容 点赞数 评论数
+# 回答结构体 字段含义: 问题内容 问题标签 回复内容 点赞数
 Answer = namedtuple('Answer', 'labels question answer star')
 
 # 当前路径以及数据库路径
