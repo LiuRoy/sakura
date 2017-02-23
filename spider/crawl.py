@@ -100,16 +100,23 @@ def parse_answer_page(page):
         print 'invalid content'
         return None
 
-    html = PyQuery(page)
-    labels = []
-    for item in html("div[class='zm-tag-editor-labels zg-clear']>a"):
-        labels.append(item.text.strip())
+    try:
+        html = PyQuery(page)
+        labels = []
+        for item in html("div[class='zm-tag-editor-labels zg-clear']>a"):
+            labels.append(item.text.strip())
 
-    question = html("div[id='zh-question-title']>h2[class='zm-item-title']>a")[0].text_content().strip()
-    star = int(html("span[class='js-voteCount']")[0].text)
-    answer = html("div[class='zm-editable-content clearfix']")[0].text_content().strip()
-
-    return Answer(labels=labels, question=question, answer=answer, star=star)
+        question = html("div[id='zh-question-title']>h2[class='zm-item-title']>a")[0].text_content().strip()
+        star = int(html("span[class='js-voteCount']")[0].text)
+        answer = html("div[class='zm-editable-content clearfix']")[0].text_content().strip()
+    except Exception as e:
+        print 'parse error: {}'.format(e)
+        global session
+        session.close()  # 知乎的防爬虫机制, 没有什么好的办法, 只能关闭链接并重新等待一段时间
+        session = requests.Session()
+        time.sleep(200)
+    else:
+        return Answer(labels=labels, question=question, answer=answer, star=star)
 
 
 def parse_answer_id(url):
@@ -233,7 +240,3 @@ if __name__ == '__main__':
                 answer_page = get_page(ans_url)
                 answer = parse_answer_page(answer_page)
                 add_answer(question_id, answer_id, answer)
-
-                time.sleep(1)
-            time.sleep(10)
-        time.sleep(120)
