@@ -1,0 +1,4 @@
+github.com/jinzhu/gorm
+github.com/jinzhu/gorm/dialects/sqlite
+github.com/huichen/wukong/engine
+gopkg.in/gin-gonic/gin.v1

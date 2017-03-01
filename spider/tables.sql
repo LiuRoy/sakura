@@ -7,7 +7,8 @@ CREATE TABLE answer (
         star INTEGER NOT NULL,
         PRIMARY KEY (id)
 );
-CREATE INDEX ix_question_answer on answer(question_id, answer_id);
+CREATE INDEX ix_question on answer(question_id);
+CREATE INDEX ix_answer on answer(answer_id);
 
 CREATE TABLE label (
         id INTEGER NOT NULL,

@@ -5,7 +5,6 @@
 ### 一个简单例子
 
 假如有四个文档，分别代表四部电影的名字：
-
 1. The Shawshank Redemption
 2. Forrest Gump
 3. The Godfather
@@ -29,7 +28,7 @@
 
 + 搜集要添加索引的文本，例如想要在知乎中搜索问题，就需要搜集所有问题的文本。
 
-+ 文本的预处理，把上述的收集的文本处理成为一个个词项。不同语言的预处理过程差异很大，以中文为例，首先要把搜集到的文本做切词处理，变为一个个词条，切词的质量对最后的搜索效果影响很大，如果切的粒度太大，一些短词搜索正确率就会很低；如果切的粒度太小，长句匹配效果会很差。针对切词后的词条，还需要正则化：例如滤除停用词（例如：的 把 并且，一些几乎所有中文文档都包含的一些词，这些词对搜索结果没有实质性影响），去掉形容词后面的`的`字等。
++ 文本的预处理，把上述的收集的文本处理成为一个个词项。不同语言的预处理过程差异很大，以中文为例，首先要把搜集到的文本做分词处理，变为一个个词条，分词的质量对最后的搜索效果影响很大，如果切的粒度太大，一些短词搜索正确率就会很低；如果切的粒度太小，长句匹配效果会很差。针对分词后的词条，还需要正则化：例如滤除停用词（例如：的 把 并且，一些几乎所有中文文档都包含的一些词，这些词对搜索结果没有实质性影响），去掉形容词后面的`的`字等。
 
 + 根据上一步的词项和文档建立倒排索引。实际使用的时候，倒排索引不仅仅只是文档的id，还会有其他的相关的信息：词项在文档中出现的次数、词项在文档中出现的位置、词项在文档中的域（以文章搜索举例，域可以代表标题、正文、作者、标签等）、文档元信息（以文章搜索举例，元信息可能是文章的编辑时间、浏览次数、评论个数等）等。因为搜索的需求各种各样，有了这些数据，实际使用的时候就可以把查询出来的结果按照需求排序。
 
@@ -126,7 +125,53 @@ type KeywordIndices struct {
 
 2. 从上面的`KeywordIndices`数据中找出所有公共的文档，并根据文档词频和位置信息计算bm25和位置数据。
 
-### 执行流程
+### 代码架构
 
+悟空使用了很多异步的方式提高运行效率，针对我们开发高效的代码很有借鉴意义。项目文档里面有一份粗略的架构图，我根据[engine](https://github.com/LiuRoy/wukong/tree/master/engine)源码，画出了一份详细的架构图。下面就以接口为粒度讲解具体的执行流程。
+
+![](http://upload-images.jianshu.io/upload_images/2027339-268a38e2db39cd41.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+
+备注：圆柱体代表管道，矩形代表worker。
+
+#### 初始化引擎
+
+这部分体现在图最上面的`persistentStorageInitWorker`和`persistentStorageInitChannel`，如果指定了索引的持久化数据库的信息，在引擎启动的时候，会异步调用`persistentStorageInitWorker`，这个routine会将持久化的索引数据（所有storage shard）加载到内存中，加载完毕后通过`persistentStorageInitChannel`通知主routine.
+
+#### 添加文档
+
+`IndexDocument`是对外的添加文档的接口，当此接口执行的时候，先将需要分词的文本放入管道`segmenterChannel`，`segmentWorker`从`segmenterChannel`取出文本做分词处理，然后将分词的结果均匀的分配到各个shard对应的`indexerAddDocChannels`和`rankerAddDocChannels`，`indexerAddDocumentWorker`和`rankerAddDocWorker`分别从上面两个管道中取出数据更新索引数据和排序数据。
+
+如果设置了持久化数据，`IndexDocument`还会将文档数据均匀的放入到各个storage shard的`persistentStorageIndexDocumentChannels`中，`persistentStorageIndexDocumentWorker`负责将管道中的文档数据持久化到文件中。
+
+#### 删除文档
+
+`RemoveDocument`是对外的删除文档的接口，当接口执行的时候，找到文档所在的shard，然后将请求放入`indexerRemoveDocChannels`和`rankerRemoveDocChannels`，`indexerRemoveDocWorker`和`rankerRemoveDocWorker`分别监听上面两个管道，清除索引数据和排序数据。
+
+#### 查询
+
+`search`是对外的搜索接口，它会针对所有的shard里的`indexerLookupChannels`发送请求数据，之后阻塞在监听`rankerReturnChannel`这一步，`indexerLookupWorker`会调用函数`Lookup`从倒排索引中找到制定的文档，如果不要求排序，直接将数据放入`rankerReturnChannel`，否则将数据交给`rankerRankChannels`，然后由`rankerRankWorker`排完序再放入`rankerReturnChannel`。当`search`发现所有数据都返回之后，再将各个shard的数据做一次排序，然后返回。
+
+#### 总结
+
+由架构图可以很清晰地看出整个运行流程，同时知道此引擎无法分布式部署。如果需要做分布式部署，需要将每个shard作为一个独立的进程，而且上层有一个类似网管的进程做数据分发和汇总操作。
 
 ## 实例讲解
+
+为了方便自己和大家的使用，我写了一个比较简单的例子，用orm的callback方式更新搜索引擎。
+
+### 数据准备
+
+文档数据是我从知乎的恋爱和婚姻话题爬取的精品回复，大概有1800左右回复，包括问题标题，回复正文，点赞个数以及问题标签，下载链接：[https://github.com/LiuRoy/sakura/blob/master/spider/tables.sqlite](https://github.com/LiuRoy/sakura/blob/master/spider/tables.sqlite)，存储格式为sqlite，数据如下：
+
+![](http://upload-images.jianshu.io/upload_images/2027339-5d07aa4f8e049261.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+
+对如何爬取的同学可以参看代码[https://github.com/LiuRoy/sakura/blob/master/spider/crawl.py](https://github.com/LiuRoy/sakura/blob/master/spider/crawl.py)，执行如下命令直接运行
+
+```bash
+cd sakura/spider/
+pip install -r requirement
+python scrawl.py
+```
+
+### 构建索引
+
