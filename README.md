@@ -173,5 +173,22 @@ pip install -r requirement
 python scrawl.py
 ```
 
-### 构建索引
+### 启动引擎
+
+用上一步爬取的数据构建一个搜索引擎，代码参考[server.go](https://github.com/LiuRoy/sakura/blob/master/search/server.go)，在运行之前需要自己配置一下词典以及数据路径，悟空提供了一份分词词典和停用词列表，配置完成后运行`go run server.go`启动服务，然后通过浏览器就可以使用搜索服务了。
+
+![](./doc/query1.png)
+
+### 更新索引
+
+一般搜索服务的数据都是动态变化的，如何在数据频繁变动的时候以最简单的方式更新索引呢？我能想到的方法有如下几种：
+
+1. 定时全量更新索引
+2. 定时查找数据库修改数据，将修改的数据更新至索引
+3. 读取数据库binlog，将数据变动实时更新到索引
+4. 每次数据库变更时，通过接口调用或者队列的方式通知搜索引擎修改索引
+
+我采用了第四种方式做了一个demo，代码参考[sender.go](https://github.com/LiuRoy/sakura/blob/master/sender/sender.go)，为了避免代码耦合，通过orm的callback方式将修改的数据通过zeromq消息队列发送给搜索服务，搜索服务有一个goroutine来消费数据并更改索引，当执行`go run sender.go`后，新建的一条数据就可以马上被索引到。
+
+![](./doc/query2.png)
 
