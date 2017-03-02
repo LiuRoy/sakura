@@ -5,12 +5,15 @@ import (
 	"reflect"
 	"strconv"
 	"net/http"
+	"bytes"
+	"encoding/gob"
 
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/sqlite"
 	"github.com/huichen/wukong/engine"
 	"github.com/huichen/wukong/types"
 	"github.com/gin-gonic/gin"
+	zmq "github.com/pebbe/zmq4"
 )
 
 var (
@@ -23,7 +26,7 @@ var (
 )
 
 type ANSWER struct {
-	ID        uint64 `gorm:"column:id,primary_key"`
+	ID        uint64 `gorm:"column:id;primary_key"`
 	QuestionId uint64 `gorm:"column:question_id" sql:"type:integer"`
 	AnswerId uint64 `gorm:"column:answer_id" sql:"type:integer"`
 	Question string `gorm:"column:question" sql:"type:text"`
@@ -36,7 +39,7 @@ func (ANSWER) TableName() string {
 }
 
 type LABEL struct {
-	ID        uint64 `gorm:"column:id,primary_key"`
+	ID        uint64 `gorm:"column:id;primary_key"`
 	QuestionId uint64 `gorm:"column:question_id" sql:"type:integer"`
 	Label string `gorm:"column:label" sql:"type:varchar(50)"`
 }
@@ -152,6 +155,38 @@ func query(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"total": output.NumDocs, "data": docs})
 }
 
+func recv() {
+	responder, err := zmq.NewSocket(zmq.REP)
+	if err != nil {
+		panic(err)
+	}
+
+	defer responder.Close()
+	responder.Bind("tcp://*:5555")
+	for {
+		msg, _ := responder.Recv(0)
+
+		buffer := bytes.NewBufferString(msg)
+		encoder := gob.NewDecoder(buffer)
+		var record ANSWER
+		encoder.Decode(&record)
+
+		answerMap[record.AnswerId] = &ZhiHuItem{
+			QuestionId: record.QuestionId,
+			AnswerId: record.AnswerId,
+			Question: record.Question,
+			Answer: record.Answer,
+			Star: record.Star,
+		}
+		searcher.IndexDocument(record.AnswerId, types.DocumentIndexData{
+			Content: fmt.Sprintf("%s %s", record.Question, record.Answer),
+			Fields: ZhiHuScoreFields{StarCount: record.Star},
+		}, true)
+
+		responder.Send("done", 0)
+	}
+}
+
 func main() {
 	searcher.Init(types.EngineInitOptions{
 		SegmenterDictionaries: dictFile,
@@ -164,6 +199,7 @@ func main() {
 
 	addAnswer()
 
+	go recv()
 
 	router := gin.Default()
 	router.GET("/zhihu", query)

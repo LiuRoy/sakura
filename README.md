@@ -12,13 +12,13 @@
 
 如果我们想根据这四个文档建立信息检索，即输入查找词就可以找到包含此词的所有电影，最直观的实现方式是建立一个矩阵，每一行代表一个词，每一列代表一个文档，取值1/0代表该此是否在该文档中。如下：
 
-![](http://upload-images.jianshu.io/upload_images/2027339-d55a572b654ead80.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+![](./doc/matrix.png)
 
 如果输入是Dark，只需要找到Dark对应的行，选出值为1对应的文档即可。当输入是多个单词的时候，例如：The Gump，我们可以分别找到The和Gump对应的行：1011和0100，如果是想做AND运算（既包括The也包括Gump的电影），1011和0100按位与操作返回0000，即没有满足查询的电影；如果是OR运算（包括The或者包括Gump的电影），1011和0100按位与操作返回1111，这四部电影都满足查询。
 
 实际情况是我们需要检索的文档很多，一个中等规模的bbs网站发布的帖子可能也有好几百万，建立这么庞大的一个矩阵是不现实的，如果我们仔细观察这个矩阵，当数据量急剧增大的时候，这个矩阵是很稀疏的，也就是说某一个词在很多文档中不存在，对应的值为0，因此我们可以只记录每个词所在的文档id即可，如下：
 
-![](http://upload-images.jianshu.io/upload_images/2027339-0e19ab4cf2121490.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+![](./doc/index.png)
 
 查询的第一步还是找到每个查询词对应的文档列表，之后的AND或者OR操作只需要按照对应的文档id列表做过滤即可。实际代码中一般会保证此id列表有序递增，可以极大的加快过滤操作。上图中左边的每一个词叫做词项，整张表称作倒排索引。
 
@@ -129,7 +129,7 @@ type KeywordIndices struct {
 
 悟空使用了很多异步的方式提高运行效率，针对我们开发高效的代码很有借鉴意义。项目文档里面有一份粗略的架构图，我根据[engine](https://github.com/LiuRoy/wukong/tree/master/engine)源码，画出了一份详细的架构图。下面就以接口为粒度讲解具体的执行流程。
 
-![](http://upload-images.jianshu.io/upload_images/2027339-268a38e2db39cd41.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+![](./doc/structure.png)
 
 备注：圆柱体代表管道，矩形代表worker。
 
@@ -163,7 +163,7 @@ type KeywordIndices struct {
 
 文档数据是我从知乎的恋爱和婚姻话题爬取的精品回复，大概有1800左右回复，包括问题标题，回复正文，点赞个数以及问题标签，下载链接：[https://github.com/LiuRoy/sakura/blob/master/spider/tables.sqlite](https://github.com/LiuRoy/sakura/blob/master/spider/tables.sqlite)，存储格式为sqlite，数据如下：
 
-![](http://upload-images.jianshu.io/upload_images/2027339-5d07aa4f8e049261.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+![](./doc/table.png)
 
 对如何爬取的同学可以参看代码[https://github.com/LiuRoy/sakura/blob/master/spider/crawl.py](https://github.com/LiuRoy/sakura/blob/master/spider/crawl.py)，执行如下命令直接运行
 
