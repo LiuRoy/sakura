@@ -2,7 +2,6 @@
 """从知乎上爬取指定话题的精华回答"""
 import os
 import re
-import time
 from collections import namedtuple
 
 import requests
@@ -19,7 +18,7 @@ from sqlalchemy import (
 )
 
 
-session = requests.Session()
+zhihu_session = requests.Session()
 BaseModel = declarative_base()
 headers = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -59,9 +58,9 @@ def get_page(url):
         unicode 网页内容
     """
     try:
-        response = session.get(url, headers=headers, timeout=10)
+        response = zhihu_session.get(url, headers=headers, timeout=10)
     except RequestException as e:
-        print '{} error {}'.format(url, e)
+        print('{} error {}'.format(url, e))
     else:
         if response.ok:
             return response.text
@@ -78,7 +77,7 @@ def parse_answer_url(page):
     """
     result = []
     if not page:
-        print 'invalid content'
+        print('invalid content')
         return result
 
     html = PyQuery(page)
@@ -97,24 +96,23 @@ def parse_answer_page(page):
         Answer 回答详情
     """
     if not page:
-        print 'invalid content'
+        print('invalid content')
         return None
 
     try:
         html = PyQuery(page)
         labels = []
-        for item in html("div[class='zm-tag-editor-labels zg-clear']>a"):
+        for item in html("a[class='TopicLink']>div>div"):
             labels.append(item.text.strip())
 
-        question = html("div[id='zh-question-title']>h2[class='zm-item-title']>a")[0].text_content().strip()
-        star = int(html("span[class='js-voteCount']")[0].text)
-        answer = html("div[class='zm-editable-content clearfix']")[0].text_content().strip()
+        question = html("h1[class='QuestionHeader-title']")[0].text_content().strip()
+        star = int(html("button[class='VoteButton VoteButton--up']")[0].text_content().strip())
+        answer = html("span[class='RichText CopyrightRichText-richText']")[0].text_content().strip()
     except Exception as e:
-        print 'parse error: {}'.format(e)
-        global session
-        session.close()  # 知乎的防爬虫机制, 没有什么好的办法, 只能关闭链接并重新等待一段时间
-        session = requests.Session()
-        time.sleep(200)
+        print('parse error: {}'.format(e))
+        global zhihu_session
+        zhihu_session.close()  # 知乎的防爬虫机制, 没有什么好的办法, 只能关闭socket
+        zhihu_session = requests.Session()
     else:
         return Answer(labels=labels, question=question, answer=answer, star=star)
 
@@ -224,15 +222,15 @@ class LabelTable(BaseModel):
 if __name__ == '__main__':
     init_tables()
     for topic_url in topic_list:
-        for page in xrange(1, 51):
+        for page in range(1, 51):
             ans_list_url = '{}?page={}'.format(topic_url, page)
-            print ans_list_url
+            print(ans_list_url)
 
             answer_list_page = get_page(ans_list_url)
             answer_urls = parse_answer_url(answer_list_page)
 
             for ans_url in answer_urls:
-                print ans_url
+                print(ans_url)
                 question_id, answer_id = parse_answer_id(ans_url)
                 if AnswerTable.exist_answer(question_id, answer_id):
                     continue
